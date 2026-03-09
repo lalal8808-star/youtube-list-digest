@@ -1,0 +1,13 @@
+# Python / Environments
+venv/
+__pycache__/
+.env
+
+# MacOS
+.DS_Store
+
+# Logs
+cron.log
+
+# Sent history
+sent_history.json
