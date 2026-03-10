@@ -4,7 +4,10 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime, timedelta
-import yt_dlp
+
+from googleapiclient.discovery import build
+import isodate
+import urllib.parse
 import time
 import re
 from urllib.parse import quote_plus
@@ -147,182 +150,201 @@ def summarize_with_gemini(transcript_text, title, fallback_description, max_retr
     return None
 
 def search_youtube(topic, max_results=10, sent_ids=None):
-    """주어진 주제로 YouTube를 검색하고 결과를 반환합니다."""
+    """주어진 주제로 YouTube Data API v3를 검색하고 결과를 반환합니다."""
     print(f"'{topic}' 주제로 YouTube 검색 중...")
+    
+    API_KEY = os.environ.get("YOUTUBE_API_KEY")
+    if not API_KEY:
+        print("[오류] YOUTUBE_API_KEY가 등록되지 않았습니다! .env 파일이나 설정에 추가해주세요.")
+        return []
+        
+    youtube = build('youtube', 'v3', developerKey=API_KEY, cache_discovery=False)
     
     if sent_ids is None:
         sent_ids = set()
     
     videos = []
-    # 화이트리스트 채널인지 확인
     is_whitelist_topic = topic in WHITELIST_CHANNELS
     whitelist_urls = WHITELIST_CHANNELS.get(topic, [])
     
-    # 필터링을 고려하여 더 많이 검색 (화이트리스트는 특정 채널에서만 검색)
     search_count = max_results * (5 if is_whitelist_topic else 30)
     
-    ydl_opts = {
-        'quiet': True,
-        'extract_flat': True,
-        'noplaylist': True,
-        'playlist_items': f'1-{search_count}',
-    }
-    
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            entries_to_process = []
-            
-            if is_whitelist_topic:
-                print(f"  - 화이트리스트 적용됨: {whitelist_urls}")
-                for channel_url in whitelist_urls:
-                    try:
-                        # 채널의 최신 영상 탐색
-                        info = ydl.extract_info(f"{channel_url}/videos", download=False)
-                        if 'entries' in info:
-                            # 최신 영상 중 일부만 가져오기
-                            for entry in list(info['entries'])[:search_count]:
-                                if entry:
-                                    entries_to_process.append(entry)
-                    except Exception as e:
-                        print(f"  - [오류] {channel_url} 채널 검색 실패: {e}")
-            else:
-                # 관련성(ytsearch) 대신 최근 1주 필터가 적용된 고유 검색 URL 사용
-                # &sp=EgIIAw%3D%3D 는 유튜브의 '이번 주' 필터 파라미터입니다.
-                search_query = f"https://www.youtube.com/results?search_query={quote_plus(topic)}&sp=EgIIAw%3D%3D"
-                # playlist 추출 모드를 위해 noplaylist를 잠시 해제
-                ydl_opts_search = dict(ydl_opts)
-                ydl_opts_search['noplaylist'] = False
-                ydl_opts_search['extract_flat'] = 'in_playlist'
-                with yt_dlp.YoutubeDL(ydl_opts_search) as search_ydl:
-                    info = search_ydl.extract_info(search_query, download=False)
-                    if 'entries' in info:
-                        entries_to_process = list(info['entries'])
-            
-            for idx, entry in enumerate(entries_to_process):
-                if not entry:
-                    continue
-                    
-                title = entry.get('title', '제목 없음')
-                url = entry.get('url', '')
-                video_id = entry.get('id', '')
-                
-                # ------ [필터 2단계] 자극적인 제목 가려내기 (Clickbait Detection) ------
-                if CLICKBAIT_KEYWORDS.search(title):
-                    print(f"  - [스킵: 자극적 제목] '{title}'")
-                    continue
-                
-                # 이미 보낸 영상은 스킵
-                if video_id in sent_ids:
-                    print(f"  - [스킵: 이미 발송됨] '{title}'")
-                    continue
-                channel = entry.get('channel') or entry.get('uploader') or '채널명 없음'
-                description = entry.get('description', '')
-                    
-                # 유튜브 자막 추출 시도
-                transcript_text = ""
-                if video_id:
-                    try:
-                        # 1.2+ 버전 호환 api=YouTubeTranscriptApi() 사용
-                        api = YouTubeTranscriptApi()
-                        transcript_list = api.list(video_id)
-                        try:
-                            transcript = transcript_list.find_transcript(['ko', 'en'])
-                        except:
-                            transcript = next(iter(transcript_list))
-                        
-                        # 구버전(dict)과 신버전(object) 호환
-                        transcript_text = " ".join([
-                            t.text if hasattr(t, 'text') else t['text'] 
-                            for t in transcript.fetch()
-                        ])
-                    except Exception as e:
-                        # HTTP 429 등 차단될 경우 예외 처리
-                        pass
-                
-                # 자막이 없는 영상은 요약이 불가능하므로 스킵
-                if not transcript_text:
-                    print(f"  - [스킵: 자막 없음] '{title}'")
-                    continue
-                        
-                print(f"  - [수집 중: {len(videos)+1}/{max_results}] [{channel}] '{title}' 요약 및 날짜 조회 중...")
-                
-                # 상세 정보를 조회하여 메트릭 및 업로드 날짜 확보
-                upload_date_str = "날짜 알 수 없음"
-                raw_date = None
-                passed_metrics = False
-                duration_formatted = "알 수 없음"
-                
+        entries_to_process = []
+        
+        # 1주일 전 시간 계산 (RFC 3339 형식)
+        one_week_ago = (datetime.utcnow() - timedelta(days=7)).isoformat() + "Z"
+        
+        if is_whitelist_topic:
+            print(f"  - 화이트리스트 적용됨: {whitelist_urls}")
+            for channel_url in whitelist_urls:
+                handle = channel_url.rstrip('/').split('@')[-1]
                 try:
-                    with yt_dlp.YoutubeDL({'quiet': True}) as detail_ydl:
-                        v_info = detail_ydl.extract_info(video_id, download=False)
-                        raw_date = v_info.get('upload_date') # YYYYMMDD
-                        if raw_date and len(raw_date) == 8:
-                            upload_date_str = f"{raw_date[:4]}-{raw_date[4:6]}-{raw_date[6:]}"
-                            
-                        # ------ [필터 1단계] 정량적 지표 분석 ------
-                        duration = v_info.get('duration', 0)
-                        if duration:
-                            m, s = divmod(duration, 60)
-                            h, m = divmod(m, 60)
-                            if h > 0:
-                                duration_formatted = f"{h}:{m:02d}:{s:02d}"
-                            else:
-                                duration_formatted = f"{m}:{s:02d}"
-
-                        view_count = v_info.get('view_count', 0)
-                        like_count = v_info.get('like_count', 0)
-                        channel_follower_count = v_info.get('channel_follower_count', 0)
+                    # 핸들로 채널 검색
+                    channel_request = youtube.search().list(part="id", q=handle, type="channel", maxResults=1)
+                    channel_response = channel_request.execute()
+                    
+                    if not channel_response['items']:
+                        print(f"  - [오류] {handle} 채널을 찾을 수 없습니다.")
+                        continue
                         
-                        if duration < MIN_DURATION_SEC:
-                            print(f"  - [스킵: 길이 짧음 ({duration}초)] '{title}'")
-                            continue
-                            
-                        # 화이트리스트 채널은 구독자 및 조회수 필터 완화 가능하지만 여기서는 공통 적용
-                        if channel_follower_count and channel_follower_count < MIN_SUBSCRIBERS:
-                            print(f"  - [스킵: 구독자 수 미달 ({channel_follower_count}명)] '{title}'")
-                            continue
-                            
-                        if view_count > 0 and like_count > 0:
-                            like_ratio = like_count / view_count
-                            if like_ratio < MIN_LIKE_TO_VIEW_RATIO:
-                                print(f"  - [스킵: 좋아요 비율 미달 ({like_ratio*100:.1f}%)] '{title}'")
-                                continue
-                                
+                    channel_id = channel_response['items'][0]['id']['channelId']
+                    
+                    # 채널의 최신 영상 검색
+                    search_request = youtube.search().list(
+                        part="id,snippet",
+                        channelId=channel_id,
+                        type="video",
+                        order="date",
+                        publishedAfter=one_week_ago,
+                        maxResults=min(50, search_count)
+                    )
+                    search_response = search_request.execute()
+                    entries_to_process.extend(search_response.get('items', []))
+                    
                 except Exception as e:
-                    print(f"  - [상세정보 조회 실패] '{title}': {e}")
-                    pass
+                    print(f"  - [오류] {channel_url} 채널 검색 실패: {e}")
+        else:
+            # 일반 주제 검색
+            search_request = youtube.search().list(
+                part="id,snippet",
+                q=topic,
+                type="video",
+                order="relevance",
+                publishedAfter=one_week_ago,
+                maxResults=min(50, search_count)
+            )
+            search_response = search_request.execute()
+            entries_to_process.extend(search_response.get('items', []))
+
+        # 순회하며 상세 정보 가져오기
+        for idx, entry in enumerate(entries_to_process):
+            if 'id' not in entry or 'videoId' not in entry['id']:
+                continue
                 
-                # 최근 1주일 이내 영상만 포함
-                if not is_within_one_week(raw_date):
-                    print(f"  - [스킵: 1주일 이전 영상] '{title}' ({upload_date_str})")
+            video_id = entry['id']['videoId']
+            title = entry['snippet']['title']
+            
+            # HTML 엔티티 제거 (ex: &quot; -> ")
+            import html
+            title = html.unescape(title)
+            
+            url = f"https://www.youtube.com/watch?v={video_id}"
+            
+            if CLICKBAIT_KEYWORDS.search(title):
+                print(f"  - [스킵: 자극적 제목] '{title}'")
+                continue
+                
+            if video_id in sent_ids:
+                print(f"  - [스킵: 이미 발송됨] '{title}'")
+                continue
+                
+            channel = entry['snippet']['channelTitle']
+            description = entry['snippet']['description']
+            channel_id = entry['snippet']['channelId']
+            
+            # 유튜브 자막 추출
+            transcript_text = ""
+            try:
+                api = YouTubeTranscriptApi()
+                transcript_list = api.list(video_id)
+                try:
+                    transcript = transcript_list.find_transcript(['ko', 'en'])
+                except:
+                    transcript = next(iter(transcript_list))
+                transcript_text = " ".join([t.text if hasattr(t, 'text') else t['text'] for t in transcript.fetch()])
+            except Exception as e:
+                pass
+                
+            if not transcript_text:
+                print(f"  - [스킵: 자막 및 대본 없음] '{title}'")
+                continue
+                
+            print(f"  - [수집 중: {len(videos)+1}/{max_results}] [{channel}] '{title}' 요약 및 상세 정보 조회 중...")
+            
+            upload_date_str = "날짜 알 수 없음"
+            duration_formatted = "알 수 없음"
+            
+            # Video Details & Channel Info (구독자수 확보)
+            try:
+                video_request = youtube.videos().list(part="contentDetails,statistics,snippet", id=video_id)
+                video_response = video_request.execute()
+                
+                if not video_response['items']:
                     continue
                     
-                # AI 요약 및 신뢰도 평가 (자막 내용 기반 또는 설명 기반)
-                summary_data = summarize_with_gemini(transcript_text, title, description)
+                v_info = video_response['items'][0]
                 
-                # 유료 API 사용, 최소한의 딜레이
-                time.sleep(0.5)
-                
-                # 요약 결과가 없으면(신뢰도 7점 미만 등) 스킵
-                if not summary_data:
-                    print(f"  - [스킵: LLM 평가 미달] '{title}'")
+                # 영상 길이
+                duration_iso = v_info['contentDetails']['duration']
+                duration_sec = int(isodate.parse_duration(duration_iso).total_seconds())
+                m, s = divmod(duration_sec, 60)
+                h, m = divmod(m, 60)
+                if h > 0:
+                    duration_formatted = f"{h}:{m:02d}:{s:02d}"
+                else:
+                    duration_formatted = f"{m}:{s:02d}"
+                    
+                if duration_sec < MIN_DURATION_SEC:
+                    print(f"  - [스킵: 길이 짧음 ({duration_sec}초)] '{title}'")
                     continue
                     
-                videos.append({
-                    "title": title,
-                    "channel": channel,
-                    "date": upload_date_str,
-                    "duration": duration_formatted,
-                    "link": url,
-                    "summary": summary_data,
-                    "video_id": video_id
-                })
-                if len(videos) >= max_results:
-                    break
+                # 날짜 처리
+                published_at = v_info['snippet']['publishedAt']
+                upload_date_str = published_at[:10]  # YYYY-MM-DD
+                raw_date = published_at[:10].replace("-", "") # YYYYMMDD
+                
+                # 통계(조회수, 좋아요)
+                stats = v_info['statistics']
+                view_count = int(stats.get('viewCount', 0))
+                like_count = int(stats.get('likeCount', 0))
+                
+                # 채널 통계(구독자)
+                channel_request = youtube.channels().list(part="statistics", id=channel_id)
+                channel_response = channel_request.execute()
+                channel_follower_count = 0
+                if channel_response['items']:
+                    channel_follower_count = int(channel_response['items'][0]['statistics'].get('subscriberCount', 0))
+                
+                if channel_follower_count < MIN_SUBSCRIBERS:
+                    print(f"  - [스킵: 구독자 수 미달 ({channel_follower_count}명)] '{title}'")
+                    continue
+                    
+                if view_count > 0 and like_count > 0:
+                    like_ratio = like_count / view_count
+                    if like_ratio < MIN_LIKE_TO_VIEW_RATIO:
+                        print(f"  - [스킵: 좋아요 비율 미달 ({like_ratio*100:.1f}%)] '{title}'")
+                        continue
+                        
+            except Exception as e:
+                print(f"  - [상세정보 조회 오류] '{title}': {e}")
+                pass
+            
+            # AI 요약 및 신뢰도 평가
+            summary_data = summarize_with_gemini(transcript_text, title, description)
+            time.sleep(0.5)
+            
+            if not summary_data:
+                print(f"  - [스킵: LLM 평가 미달] '{title}'")
+                continue
+                
+            videos.append({
+                "title": title,
+                "channel": channel,
+                "date": upload_date_str,
+                "duration": duration_formatted,
+                "link": url,
+                "summary": summary_data,
+                "video_id": video_id
+            })
+            if len(videos) >= max_results:
+                break
+                
     except Exception as e:
         print(f"'{topic}' 검색 중 오류 발생: {e}")
-            
+        
     return videos
+
 
 def create_email_html(all_results):
     """검색 결과를 바탕으로 이메일 HTML 본문을 생성합니다."""

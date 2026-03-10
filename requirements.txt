@@ -1,4 +1,6 @@
-yt-dlp
+google-api-python-client
+isodate
 youtube-transcript-api
 google-generativeai
 python-dotenv
+
