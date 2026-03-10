@@ -36,6 +36,6 @@ jobs:
       run: |
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
-        git add sent_history.json
+        git add -f sent_history.json
         git commit -m "Update sent_history.json [skip ci]" || echo "No changes to commit"
         git push
