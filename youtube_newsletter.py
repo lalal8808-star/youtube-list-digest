@@ -205,17 +205,34 @@ def search_youtube(topic, max_results=10, sent_ids=None):
                 except Exception as e:
                     print(f"  - [오류] {channel_url} 채널 검색 실패: {e}")
         else:
-            # 일반 주제 검색
-            search_request = youtube.search().list(
-                part="id,snippet",
-                q=topic,
-                type="video",
-                order="relevance",
-                publishedAfter=one_week_ago,
-                maxResults=min(50, search_count)
-            )
-            search_response = search_request.execute()
-            entries_to_process.extend(search_response.get('items', []))
+            # 일반 주제 검색 (최대 search_count 개수까지 반복 수집)
+            next_page_token = None
+            total_fetched = 0
+            while total_fetched < search_count:
+                req_kwargs = {
+                    "part": "id,snippet",
+                    "q": topic,
+                    "type": "video",
+                    "order": "relevance",
+                    "publishedAfter": one_week_ago,
+                    "maxResults": min(50, search_count - total_fetched)
+                }
+                if next_page_token:
+                    req_kwargs["pageToken"] = next_page_token
+                    
+                search_request = youtube.search().list(**req_kwargs)
+                search_response = search_request.execute()
+                items = search_response.get('items', [])
+                
+                if not items:
+                    break
+                    
+                entries_to_process.extend(items)
+                total_fetched += len(items)
+                
+                next_page_token = search_response.get('nextPageToken')
+                if not next_page_token:
+                    break
 
         # 순회하며 상세 정보 가져오기
         for idx, entry in enumerate(entries_to_process):
