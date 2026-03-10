@@ -238,6 +238,11 @@ def search_youtube(topic, max_results=10, sent_ids=None):
                     except Exception as e:
                         # HTTP 429 등 차단될 경우 예외 처리
                         pass
+                
+                # 자막이 없는 영상은 요약이 불가능하므로 스킵
+                if not transcript_text:
+                    print(f"  - [스킵: 자막 없음] '{title}'")
+                    continue
                         
                 print(f"  - [수집 중: {len(videos)+1}/{max_results}] [{channel}] '{title}' 요약 및 날짜 조회 중...")
                 
@@ -357,6 +362,7 @@ def create_email_html(all_results):
               <li class="criteria-item"><b>분량 필터:</b> 심도 있는 분석을 위해 5분 이상의 영상 우선 (Shorts 제외)</li>
               <li class="criteria-item"><b>채널 신뢰도:</b> 구독자 1,000명 이상의 검증된 채널</li>
               <li class="criteria-item"><b>반응도:</b> 조회수 대비 좋아요 비율 1.5% 이상의 고품질 콘텐츠</li>
+              <li class="criteria-item"><b>자막 필수:</b> 정확한 요약을 위해 자막(CC)이 제공되는 영상만 대상</li>
               <li class="criteria-item"><b>클릭베이트 제외:</b> 자극적인 제목(충격, 경악 등) 정규식 필터링</li>
               <li class="criteria-item"><b>AI 심층 평가:</b> Gemini AI가 분석한 신뢰도 점수 7점 이상만 최종 추천</li>
             </ul>
