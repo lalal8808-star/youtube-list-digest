@@ -243,21 +243,22 @@ def search_youtube(topic, max_results=10, sent_ids=None):
             description = entry['snippet']['description']
             channel_id = entry['snippet']['channelId']
             
-            # 유튜브 자막 추출
+            # 유튜브 자막 및 설명글 추출
             transcript_text = ""
             try:
-                api = YouTubeTranscriptApi()
-                transcript_list = api.list(video_id)
+                transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
                 try:
                     transcript = transcript_list.find_transcript(['ko', 'en'])
                 except:
+                    # 한국어나 영어가 없으면 가장 첫 번째 자동 생성/수동 자막 선택
                     transcript = next(iter(transcript_list))
-                transcript_text = " ".join([t.text if hasattr(t, 'text') else t['text'] for t in transcript.fetch()])
+                transcript_text = " ".join([t['text'] for t in transcript.fetch()])
             except Exception as e:
                 pass
                 
-            if not transcript_text:
-                print(f"  - [스킵: 자막 및 대본 없음] '{title}'")
+            # 자막도 없고 (자동 생성 포함), 유튜브 설명란마저 텅 비어있으면 아예 내용 파악이 안 되므로 스킵
+            if not transcript_text and len(description.strip()) < 10:
+                print(f"  - [스킵: 자막 및 설명글 없음] '{title}'")
                 continue
                 
             print(f"  - [수집 중: {len(videos)+1}/{max_results}] [{channel}] '{title}' 요약 및 상세 정보 조회 중...")
@@ -384,7 +385,7 @@ def create_email_html(all_results):
               <li class="criteria-item"><b>분량 필터:</b> 심도 있는 분석을 위해 5분 이상의 영상 우선 (Shorts 제외)</li>
               <li class="criteria-item"><b>채널 신뢰도:</b> 구독자 1,000명 이상의 검증된 채널</li>
               <li class="criteria-item"><b>반응도:</b> 조회수 대비 좋아요 비율 1.5% 이상의 고품질 콘텐츠</li>
-              <li class="criteria-item"><b>자막 필수:</b> 정확한 요약을 위해 자막(CC)이 제공되는 영상만 대상</li>
+              <li class="criteria-item"><b>자막/대본/설명:</b> 정확한 요약을 위해 스크립트(자동생성 포함)나 설명글이 존재하는 영상만 대상</li>
               <li class="criteria-item"><b>클릭베이트 제외:</b> 자극적인 제목(충격, 경악 등) 정규식 필터링</li>
               <li class="criteria-item"><b>AI 심층 평가:</b> Gemini AI가 분석한 신뢰도 점수 7점 이상만 최종 추천</li>
             </ul>
