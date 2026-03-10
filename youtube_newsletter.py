@@ -159,7 +159,7 @@ def search_youtube(topic, max_results=10, sent_ids=None):
     whitelist_urls = WHITELIST_CHANNELS.get(topic, [])
     
     # 필터링을 고려하여 더 많이 검색 (화이트리스트는 특정 채널에서만 검색)
-    search_count = max_results * (5 if is_whitelist_topic else 15)
+    search_count = max_results * (5 if is_whitelist_topic else 30)
     
     ydl_opts = {
         'quiet': True,
@@ -369,8 +369,8 @@ def create_email_html(all_results):
         html += """
         <div class="topic-section">
             <h2 class="topic-title">📌 안내</h2>
-            <p>오늘은 추천 기준(조회수, 평점 피드백, 자극성 필터 등)을 통과한 영상이 없거나, <br>
-            AI 요약 API(Gemini)의 일일 무료 사용량(Quota)을 초과하여 목록을 생성하지 못했습니다.</p>
+            <p>오늘은 추천 기준(최근성, 분량, 평점 피드백, 자극성 필터 등)을 모두 통과한 새로운 영상이 없었습니다. <br>
+            (이미 발송된 영상은 중복을 피하기 위해 자동 제외되었습니다.)</p>
             <p>내일 다시 시도해주세요.</p>
         </div>
         """
