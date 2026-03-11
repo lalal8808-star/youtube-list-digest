@@ -55,7 +55,7 @@ RECEIVER_EMAIL = os.environ.get("RECEIVER_EMAIL", "receiver_email@gmail.com")
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
+    genai.configure(api_key=GEMINI_API_KEY.strip())
 
 SENT_HISTORY_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sent_history.json")
 
@@ -154,10 +154,11 @@ def search_youtube(topic, max_results=10, sent_ids=None):
     print(f"'{topic}' 주제로 YouTube 검색 중...")
     
     API_KEY = os.environ.get("YOUTUBE_API_KEY")
-    if not API_KEY:
+    if not API_KEY or not API_KEY.strip():
         print("[오류] YOUTUBE_API_KEY가 등록되지 않았습니다! .env 파일이나 설정에 추가해주세요.")
         return []
         
+    API_KEY = API_KEY.strip()
     youtube = build('youtube', 'v3', developerKey=API_KEY, cache_discovery=False)
     
     if sent_ids is None:
