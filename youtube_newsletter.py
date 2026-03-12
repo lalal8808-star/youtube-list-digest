@@ -5,7 +5,6 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime, timedelta
 
-from googleapiclient.discovery import build
 import isodate
 import urllib.parse
 import time
@@ -159,148 +158,126 @@ def summarize_with_gemini(transcript_text, title, fallback_description, max_retr
                 return None
     return None
 
+def yt_api(endpoint, params, timeout=15):
+    """YouTube Data API v3 직접 호출 (requests 기반, 타임아웃 보장)"""
+    import requests
+    API_KEY = os.environ.get("YOUTUBE_API_KEY", "").strip()
+    params["key"] = API_KEY
+    url = f"https://www.googleapis.com/youtube/v3/{endpoint}"
+    resp = requests.get(url, params=params, timeout=timeout)
+    resp.raise_for_status()
+    return resp.json()
+
 def search_youtube(topic, max_results=10, sent_ids=None):
-    """주어진 주제로 YouTube Data API v3를 검색하고 결과를 반환합니다."""
-    print(f"'{topic}' 주제로 YouTube 검색 중...")
-    
-    API_KEY = os.environ.get("YOUTUBE_API_KEY")
-    if not API_KEY or not API_KEY.strip():
-        print("[오류] YOUTUBE_API_KEY가 등록되지 않았습니다! .env 파일이나 설정에 추가해주세요.")
+    """주어진 주제로 YouTube Data API v3 (requests 기반)를 검색합니다."""
+    print(f"\'{topic}\' 주제로 YouTube 검색 중...")
+
+    API_KEY = os.environ.get("YOUTUBE_API_KEY", "").strip()
+    if not API_KEY:
+        print("[오류] YOUTUBE_API_KEY가 등록되지 않았습니다!")
         return []
-        
-    API_KEY = API_KEY.strip()
-    youtube = build('youtube', 'v3', developerKey=API_KEY, cache_discovery=False)
-    
+
     if sent_ids is None:
         sent_ids = set()
-    
+
     videos = []
     is_whitelist_topic = topic in WHITELIST_CHANNELS
     whitelist_urls = WHITELIST_CHANNELS.get(topic, [])
-    
-    # 필터링을 고려하여 충분히 검색 (단, 너무 많으면 실행 시간 초과)
-    search_count = max_results * (5 if is_whitelist_topic else 10)
-    
+    search_count = max_results * (5 if is_whitelist_topic else 8)  # videoDuration 필터 덕에 줄여도 충분
+
     try:
         entries_to_process = []
-        
-        # 1주일 전 시간 계산 (RFC 3339 형식)
         one_week_ago = (datetime.utcnow() - timedelta(days=7)).isoformat() + "Z"
-        
+
         if is_whitelist_topic:
             print(f"  - 화이트리스트 적용됨: {whitelist_urls}")
             for channel_url in whitelist_urls:
-                handle = channel_url.rstrip('/').split('@')[-1]
+                handle = channel_url.rstrip("/").split("@")[-1]
                 try:
-                    # 핸들로 채널 검색
-                    channel_request = youtube.search().list(part="id", q=handle, type="channel", maxResults=1)
-                    channel_response = channel_request.execute()
-                    
-                    if not channel_response['items']:
-                        print(f"  - [오류] {handle} 채널을 찾을 수 없습니다.")
+                    r = yt_api("search", {"part": "id", "q": handle, "type": "channel", "maxResults": 1})
+                    if not r.get("items"):
                         continue
-                        
-                    channel_id = channel_response['items'][0]['id']['channelId']
-                    
-                    # 채널의 최신 영상 검색
-                    search_request = youtube.search().list(
-                        part="id,snippet",
-                        channelId=channel_id,
-                        type="video",
-                        order="date",
-                        publishedAfter=one_week_ago,
-                        maxResults=min(50, search_count)
-                    )
-                    search_response = search_request.execute()
-                    entries_to_process.extend(search_response.get('items', []))
-                    
+                    channel_id = r["items"][0]["id"]["channelId"]
+                    r2 = yt_api("search", {
+                        "part": "id,snippet", "channelId": channel_id,
+                        "type": "video", "order": "date",
+                        "publishedAfter": one_week_ago,
+                        "videoDuration": "medium",  # 4분~20분 (Shorts 제외)
+                        "maxResults": min(50, search_count)
+                    })
+                    entries_to_process.extend(r2.get("items", []))
                 except Exception as e:
                     print(f"  - [오류] {channel_url} 채널 검색 실패: {e}")
         else:
-            # 일반 주제 검색 (최대 search_count 개수까지 반복 수집)
             next_page_token = None
             total_fetched = 0
             while total_fetched < search_count:
-                req_kwargs = {
-                    "part": "id,snippet",
-                    "q": topic,
-                    "type": "video",
-                    "order": "relevance",
-                    "publishedAfter": one_week_ago,
+                params = {
+                    "part": "id,snippet", "q": topic, "type": "video",
+                    "order": "relevance", "publishedAfter": one_week_ago,
+                    "videoDuration": "medium",  # 4분~20분 (Shorts 제외)
                     "maxResults": min(50, search_count - total_fetched)
                 }
                 if next_page_token:
-                    req_kwargs["pageToken"] = next_page_token
-                    
-                search_request = youtube.search().list(**req_kwargs)
-                search_response = search_request.execute()
-                items = search_response.get('items', [])
-                
+                    params["pageToken"] = next_page_token
+                try:
+                    r = yt_api("search", params)
+                except Exception as e:
+                    print(f"  - [검색 오류]: {e}")
+                    break
+                items = r.get("items", [])
                 if not items:
                     break
-                    
                 entries_to_process.extend(items)
                 total_fetched += len(items)
-                
-                next_page_token = search_response.get('nextPageToken')
+                next_page_token = r.get("nextPageToken")
                 if not next_page_token:
                     break
 
-        # ──────────────────────────────────────────────────────
-        # 1단계: 검색 결과에서 video_id 목록을 뽑은 뒤 배치(Batch) API로 상세 정보 한 번에 조회
-        # ──────────────────────────────────────────────────────
-        candidate_entries = []  # (video_id, title, url, channel, description, channel_id)
+        # ── 1단계: 후보 목록 구성 ──
+        import html as _html
+        candidate_entries = []
         for entry in entries_to_process:
-            if 'id' not in entry or 'videoId' not in entry['id']:
+            if "id" not in entry or "videoId" not in entry["id"]:
                 continue
-            video_id = entry['id']['videoId']
-            import html as _html
-            title = _html.unescape(entry['snippet']['title'])
+            video_id = entry["id"]["videoId"]
+            title = _html.unescape(entry["snippet"]["title"])
             if CLICKBAIT_KEYWORDS.search(title):
                 continue
             if video_id in sent_ids:
                 continue
             candidate_entries.append((
-                video_id,
-                title,
+                video_id, title,
                 f"https://www.youtube.com/watch?v={video_id}",
-                entry['snippet']['channelTitle'],
-                entry['snippet'].get('description', ''),
-                entry['snippet']['channelId']
+                entry["snippet"]["channelTitle"],
+                entry["snippet"].get("description", ""),
+                entry["snippet"]["channelId"]
             ))
 
-        # 배치 크기 50 단위로 영상 상세 정보 한 번에 조회
-        video_details_map = {}  # video_id -> v_info dict
-        for batch_start in range(0, len(candidate_entries), 50):
-            batch_ids = [e[0] for e in candidate_entries[batch_start:batch_start+50]]
+        # ── 2단계: 배치로 영상 상세 정보 조회 ──
+        video_details_map = {}
+        for i in range(0, len(candidate_entries), 50):
+            batch_ids = ",".join(e[0] for e in candidate_entries[i:i+50])
             try:
-                vresp = youtube.videos().list(
-                    part="contentDetails,statistics,snippet",
-                    id=",".join(batch_ids)
-                ).execute()
-                for item in vresp.get('items', []):
-                    video_details_map[item['id']] = item
+                r = yt_api("videos", {"part": "contentDetails,statistics,snippet", "id": batch_ids})
+                for item in r.get("items", []):
+                    video_details_map[item["id"]] = item
             except Exception as e:
                 print(f"  - [배치 상세정보 오류]: {e}")
 
-        # 채널 구독자 수 배치 조회
+        # ── 3단계: 배치로 채널 구독자 수 조회 ──
         channel_ids = list({e[5] for e in candidate_entries})
-        channel_stats_map = {}  # channel_id -> subscriber_count
-        for batch_start in range(0, len(channel_ids), 50):
-            batch_cids = channel_ids[batch_start:batch_start+50]
+        channel_stats_map = {}
+        for i in range(0, len(channel_ids), 50):
+            batch_cids = ",".join(channel_ids[i:i+50])
             try:
-                cresp = youtube.channels().list(
-                    part="statistics",
-                    id=",".join(batch_cids)
-                ).execute()
-                for item in cresp.get('items', []):
-                    channel_stats_map[item['id']] = int(item['statistics'].get('subscriberCount', 0))
+                r = yt_api("channels", {"part": "statistics", "id": batch_cids})
+                for item in r.get("items", []):
+                    channel_stats_map[item["id"]] = int(item["statistics"].get("subscriberCount", 0))
             except Exception as e:
                 print(f"  - [채널정보 배치 오류]: {e}")
 
-        # ──────────────────────────────────────────────────────
-        # 2단계: 배치 결과로 빠른 필터링, 이후 자막/Gemini는 통과한 영상만 적용
-        # ──────────────────────────────────────────────────────
+        # ── 4단계: 필터링 → 자막 → Gemini ──
         for (video_id, title, url, channel, description, channel_id) in candidate_entries:
             if len(videos) >= max_results:
                 break
@@ -309,73 +286,65 @@ def search_youtube(topic, max_results=10, sent_ids=None):
             if not v_info:
                 continue
 
-            # 영상 길이 필터
             try:
-                duration_iso = v_info['contentDetails']['duration']
-                duration_sec = int(isodate.parse_duration(duration_iso).total_seconds())
+                duration_sec = int(isodate.parse_duration(v_info["contentDetails"]["duration"]).total_seconds())
             except:
                 continue
             if duration_sec < MIN_DURATION_SEC:
-                print(f"  - [스킵: 길이 짧음 ({duration_sec}초)] '{title}'")
+                print(f"  - [스킵: {duration_sec}초] \'{title}\'")
                 continue
 
-            # 날짜 필터 (1주일 이내)
             try:
-                published_at = v_info['snippet']['publishedAt']
+                published_at = v_info["snippet"]["publishedAt"]
                 raw_date = published_at[:10].replace("-", "")
                 upload_date_str = published_at[:10]
             except:
                 raw_date = None
                 upload_date_str = "날짜 알 수 없음"
             if not is_within_one_week(raw_date):
-                print(f"  - [스킵: 1주일 이전] '{title}' ({upload_date_str})")
+                print(f"  - [스킵: 1주일 이전] \'{title}\' ({upload_date_str})")
                 continue
 
-            # 구독자 수 필터
             subs = channel_stats_map.get(channel_id, 0)
             if subs < MIN_SUBSCRIBERS:
-                print(f"  - [스킵: 구독자 미달 ({subs}명)] '{title}'")
+                print(f"  - [스킵: 구독자 {subs}명] \'{title}\'")
                 continue
 
-            # 좋아요 비율 필터
-            stats = v_info.get('statistics', {})
-            view_count = int(stats.get('viewCount', 0))
-            like_count = int(stats.get('likeCount', 0))
+            stats = v_info.get("statistics", {})
+            view_count = int(stats.get("viewCount", 0))
+            like_count = int(stats.get("likeCount", 0))
             if view_count > 0 and like_count > 0:
                 like_ratio = like_count / view_count
                 if like_ratio < MIN_LIKE_TO_VIEW_RATIO:
-                    print(f"  - [스킵: 좋아요 비율 미달 ({like_ratio*100:.1f}%)] '{title}'")
+                    print(f"  - [스킵: 좋아요 {like_ratio*100:.1f}%] \'{title}\'")
                     continue
 
-            # 영상 길이 포맷
             m, s = divmod(duration_sec, 60)
             h, m = divmod(m, 60)
             duration_formatted = f"{h}:{m:02d}:{s:02d}" if h > 0 else f"{m}:{s:02d}"
 
-            # 3단계: 통과한 영상만 자막 추출
             transcript_text = ""
             try:
                 transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
                 try:
-                    transcript = transcript_list.find_transcript(['ko', 'en'])
+                    transcript = transcript_list.find_transcript(["ko", "en"])
                 except:
                     transcript = next(iter(transcript_list))
-                transcript_text = " ".join([t['text'] for t in transcript.fetch()])
+                transcript_text = " ".join([t["text"] for t in transcript.fetch()])
             except:
                 pass
 
             if not transcript_text and len(description.strip()) < 10:
-                print(f"  - [스킵: 자막/설명 없음] '{title}'")
+                print(f"  - [스킵: 자막/설명 없음] \'{title}\'")
                 continue
 
-            print(f"  - [수집 중: {len(videos)+1}/{max_results}] [{channel}] '{title}'")
+            print(f"  - [수집 중: {len(videos)+1}/{max_results}] [{channel}] \'{title}\'")
 
-            # 4단계: Gemini AI 요약
             summary_data = summarize_with_gemini(transcript_text, title, description)
             time.sleep(0.5)
 
             if not summary_data:
-                print(f"  - [스킵: LLM 평가 미달] '{title}'")
+                print(f"  - [스킵: LLM 미달] \'{title}\'")
                 continue
 
             videos.append({
@@ -387,10 +356,10 @@ def search_youtube(topic, max_results=10, sent_ids=None):
                 "summary": summary_data,
                 "video_id": video_id
             })
-                
+
     except Exception as e:
-        print(f"'{topic}' 검색 중 오류 발생: {e}")
-        
+        print(f"\'{topic}\' 검색 중 오류 발생: {e}")
+
     return videos
 
 
