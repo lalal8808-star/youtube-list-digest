@@ -34,7 +34,8 @@ def _timeout_handler(signum, frame):
 # ==========================================
 
 # 관심 주제 (언제든지 수정 가능)
-TOPICS = ["Global Politics", "Artificial Intelligence", "Global Economy"]
+# 관심 주제 (한국어 검색으로 변경)
+TOPICS = ["국제정치", "인공지능", "세계 경제"]
 
 # 각 주제당 추천할 영상 개수
 VIDEOS_PER_TOPIC = 5
@@ -216,6 +217,8 @@ def search_youtube(topic, max_results=10, sent_ids=None):
                     "part": "id,snippet", "q": topic, "type": "video",
                     "order": "relevance", "publishedAfter": one_week_ago,
                     "videoDuration": "medium",  # 4분~20분 (Shorts 제외)
+                    "relevanceLanguage": "ko",  # 한국어 영상 우선
+                    "regionCode": "KR",         # 한국 지역 우선
                     "maxResults": min(50, search_count - total_fetched)
                 }
                 if next_page_token:
