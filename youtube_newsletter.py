@@ -41,9 +41,10 @@ TOPICS = ["국제정치", "인공지능", "세계 경제"]
 VIDEOS_PER_TOPIC = 5
 
 # 필터링 허들 (오래되거나 퀄리티 낮은 채널 제외)
-MIN_DURATION_SEC = 300  # 최소 5분 이상 (300초), 최근 소식은 5~10분 영상이 많으므로 완화
-MIN_SUBSCRIBERS = 1000  # 최소 1,000 구독자 (테스트를 위해 하향)
-MIN_LIKE_TO_VIEW_RATIO = 0.015  # 조회수 대비 좋아요 비율 최소 1.5% (유튜브 평균 약 2~4% 감안 시 완화)
+# 필터링 허들 (한국 유튜브 환경에 맞춰 조정)
+MIN_DURATION_SEC = 240           # 최소 4분 이상 (Shorts 제외 및 뉴스 요약 감안)
+MIN_SUBSCRIBERS = 5000           # 최소 5,000 구독자 (신뢰도 상향)
+MIN_LIKE_TO_VIEW_RATIO = 0.008   # 최소 좋아요 비율 0.8% (뉴스 채널 시청 특성 반영)
 
 # 자극적인 제목 필터링 (정규식 기반)
 CLICKBAIT_KEYWORDS = re.compile(
