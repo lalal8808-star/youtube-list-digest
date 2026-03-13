@@ -41,10 +41,10 @@ TOPICS = ["국제정치", "인공지능", "세계 경제"]
 VIDEOS_PER_TOPIC = 5
 
 # 필터링 허들 (오래되거나 퀄리티 낮은 채널 제외)
-# 필터링 허들 (한국 유튜브 환경에 맞춰 조정)
-MIN_DURATION_SEC = 240           # 최소 4분 이상 (Shorts 제외 및 뉴스 요약 감안)
-MIN_SUBSCRIBERS = 5000           # 최소 5,000 구독자 (신뢰도 상향)
-MIN_LIKE_TO_VIEW_RATIO = 0.008   # 최소 좋아요 비율 0.8% (뉴스 채널 시청 특성 반영)
+# 필터링 허들 (한국 유튜브 환경에 맞춰 더 완화)
+MIN_DURATION_SEC = 240           # 최소 4분 이상
+MIN_SUBSCRIBERS = 2000           # 최소 2,000 구독자 (더 많은 채널 포함)
+MIN_LIKE_TO_VIEW_RATIO = 0.005   # 최소 좋아요 비율 0.5% (대형 뉴스 채널 포함)
 
 # 자극적인 제목 필터링 (정규식 기반)
 CLICKBAIT_KEYWORDS = re.compile(
@@ -181,7 +181,8 @@ def search_youtube(topic, max_results=10, sent_ids=None):
     videos = []
     is_whitelist_topic = topic in WHITELIST_CHANNELS
     whitelist_urls = WHITELIST_CHANNELS.get(topic, [])
-    search_count = max_results * (5 if is_whitelist_topic else 8)  # videoDuration 필터 덕에 줄여도 충분
+    # 필터링을 고려하여 충분히 검색 (확률을 높이기 위해 검색량 증가)
+    search_count = max_results * (5 if is_whitelist_topic else 20)  # 5 * 20 = 100개 검색
 
     try:
         entries_to_process = []
@@ -399,8 +400,8 @@ def create_email_html(all_results):
             <ul class="criteria-list">
               <li class="criteria-item"><b>최근성:</b> 업로드 중 1주일 이내의 최신 영상만 선정</li>
               <li class="criteria-item"><b>분량 필터:</b> 심도 있는 분석을 위해 4분 이상의 영상 우선 (Shorts 제외)</li>
-              <li class="criteria-item"><b>채널 신뢰도:</b> 구독자 5,000명 이상의 검증된 채널</li>
-              <li class="criteria-item"><b>반응도:</b> 조회수 대비 좋아요 비율 0.8% 이상의 고품질 콘텐츠</li>
+              <li class="criteria-item"><b>채널 신뢰도:</b> 구독자 2,000명 이상의 검증된 채널</li>
+              <li class="criteria-item"><b>반응도:</b> 조회수 대비 좋아요 비율 0.5% 이상의 고품질 콘텐츠</li>
               <li class="criteria-item"><b>자막/대본/설명:</b> 정확한 요약을 위해 스크립트(자동생성 포함)나 설명글이 존재하는 영상만 대상</li>
               <li class="criteria-item"><b>클릭베이트 제외:</b> 자극적인 제목(충격, 경악 등) 정규식 필터링</li>
             </ul>
