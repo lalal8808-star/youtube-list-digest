@@ -109,7 +109,7 @@ def summarize_with_gemini(transcript_text, title, fallback_description, max_retr
     
     for attempt in range(max_retries):
         try:
-            model = genai.GenerativeModel("gemini-2.5-flash")
+            model = genai.GenerativeModel("gemini-2.0-flash")
             if transcript_text:
                 prompt = (
                     f"다음은 유튜브 영상의 자막입니다. 이 영상이 객관적인 근거를 제시하고 있는지, 자극적인 어조로 선동하고 있는지 분석하고, 정보의 깊이와 전문성을 1~10점으로 평가해 주세요.\n"
@@ -141,6 +141,7 @@ def summarize_with_gemini(transcript_text, title, fallback_description, max_retr
             
             # 7점 미만이면 걸러냄
             if score < 7:
+                print(f"  - [스킵: AI 점수 미달 ({score}점)] '{title}'")
                 return None
                 
             summary_text = '\n'.join(lines[1:]).strip().replace('\n', '<br>')
@@ -396,15 +397,15 @@ def create_email_html(all_results):
       <body>
         <div class="container">
           <div class="header">
-            <h1>오늘의 맞춤형 YouTube 추천 (국제정세, AI, 경제)</h1>
+            <h1>오늘의 맞춤형 YouTube 추천 (국제정치, 인공지능, 경제)</h1>
           </div>
           <div class="criteria-section">
             <h3 class="criteria-title">🔍 영상 선정 기준</h3>
             <ul class="criteria-list">
               <li class="criteria-item"><b>최근성:</b> 업로드 중 1주일 이내의 최신 영상만 선정</li>
-              <li class="criteria-item"><b>분량 필터:</b> 심도 있는 분석을 위해 5분 이상의 영상 우선 (Shorts 제외)</li>
-              <li class="criteria-item"><b>채널 신뢰도:</b> 구독자 1,000명 이상의 검증된 채널</li>
-              <li class="criteria-item"><b>반응도:</b> 조회수 대비 좋아요 비율 1.5% 이상의 고품질 콘텐츠</li>
+              <li class="criteria-item"><b>분량 필터:</b> 심도 있는 분석을 위해 4분 이상의 영상 우선 (Shorts 제외)</li>
+              <li class="criteria-item"><b>채널 신뢰도:</b> 구독자 5,000명 이상의 검증된 채널</li>
+              <li class="criteria-item"><b>반응도:</b> 조회수 대비 좋아요 비율 0.8% 이상의 고품질 콘텐츠</li>
               <li class="criteria-item"><b>자막/대본/설명:</b> 정확한 요약을 위해 스크립트(자동생성 포함)나 설명글이 존재하는 영상만 대상</li>
               <li class="criteria-item"><b>클릭베이트 제외:</b> 자극적인 제목(충격, 경악 등) 정규식 필터링</li>
               <li class="criteria-item"><b>AI 심층 평가:</b> Gemini AI가 분석한 신뢰도 점수 7점 이상만 최종 추천</li>
