@@ -139,16 +139,11 @@ def summarize_with_gemini(transcript_text, title, fallback_description, max_retr
             if match:
                 score = float(match.group(1))
             
-            # 7점 미만이면 걸러냄
-            if score < 7:
-                print(f"  - [스킵: AI 점수 미달 ({score}점)] '{title}'")
-                return None
-                
             summary_text = '\n'.join(lines[1:]).strip().replace('\n', '<br>')
             
             if not transcript_text:
-                return f"<b>[신뢰도 {score}점] ※(영상 자막 없음) 제목/설명 기반 AI 요약:</b><br>{summary_text}"
-            return f"<b>[신뢰도 {score}점]</b><br>{summary_text}"
+                return f"<b>※(영상 자막 없음) 제목/설명 기반 AI 요약:</b><br>{summary_text}"
+            return f"{summary_text}"
             
         except Exception as e:
             error_msg = str(e)
@@ -408,7 +403,6 @@ def create_email_html(all_results):
               <li class="criteria-item"><b>반응도:</b> 조회수 대비 좋아요 비율 0.8% 이상의 고품질 콘텐츠</li>
               <li class="criteria-item"><b>자막/대본/설명:</b> 정확한 요약을 위해 스크립트(자동생성 포함)나 설명글이 존재하는 영상만 대상</li>
               <li class="criteria-item"><b>클릭베이트 제외:</b> 자극적인 제목(충격, 경악 등) 정규식 필터링</li>
-              <li class="criteria-item"><b>AI 심층 평가:</b> Gemini AI가 분석한 신뢰도 점수 7점 이상만 최종 추천</li>
             </ul>
           </div>
     """
