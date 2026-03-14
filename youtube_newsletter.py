@@ -109,7 +109,7 @@ def summarize_with_gemini(transcript_text, title, fallback_description, max_retr
     
     for attempt in range(max_retries):
         try:
-            model = genai.GenerativeModel("gemini-2.0-flash")
+            model = genai.GenerativeModel("gemini-2.5-flash")
             if transcript_text:
                 prompt = (
                     f"다음은 유튜브 영상의 자막입니다. 이 영상이 객관적인 근거를 제시하고 있는지, 자극적인 어조로 선동하고 있는지 분석하고, 정보의 깊이와 전문성을 1~10점으로 평가해 주세요.\n"
