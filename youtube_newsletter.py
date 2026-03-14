@@ -433,7 +433,7 @@ def create_email_html(all_results):
                     {idx}. <a href="{video['link']}">{video['title']}</a> 
                     <span style="font-size: 14px; color: #666; font-weight: normal;">(⏱️ {video.get('duration', '알 수 없음')} | {video.get('date', '')} | {video.get('channel', '채널명 없음')})</span>
                   </h3>
-                  <div class="url-box">📋 복사용 주소 (드래그 후 복사): {video['link'].replace('://', '&#58;&#47;&#47;')}</div>
+                  <div class="url-box">{video['link']}</div>
                   <p class="video-summary">{video['summary']}</p>
                 </div>
                 """
