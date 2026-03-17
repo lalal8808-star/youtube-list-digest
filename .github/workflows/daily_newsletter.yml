@@ -2,8 +2,8 @@ name: Daily YouTube Newsletter
 
 on:
   schedule:
-    # 매일 한국 시간 오전 7시 (UTC 22:00)
-    - cron: '0 22 * * *'
+    # 매일 한국 시간 오전 6시 45분 (UTC 21:45) - 서버 대기열 지연(약 15~30분) 고려
+    - cron: '45 21 * * *'
   workflow_dispatch: # 수동 실행 버튼 추가
 
 jobs:
