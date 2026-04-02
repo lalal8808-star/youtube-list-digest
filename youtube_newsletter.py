@@ -43,7 +43,7 @@ VIDEOS_PER_TOPIC = 5
 # 필터링 허들 (오래되거나 퀄리티 낮은 채널 제외)
 # 필터링 허들 (한국 유튜브 환경에 맞춰 더 완화)
 MIN_DURATION_SEC = 240           # 최소 4분 이상
-MIN_SUBSCRIBERS = 2000           # 최소 2,000 구독자 (더 많은 채널 포함)
+MIN_SUBSCRIBERS = 50000          # 최소 50,000 구독자 (채널 신뢰도 상향)
 MIN_LIKE_TO_VIEW_RATIO = 0.005   # 최소 좋아요 비율 0.5% (대형 뉴스 채널 포함)
 
 # 자극적인 제목 필터링 (정규식 기반)
@@ -109,18 +109,20 @@ def summarize_with_gemini(transcript_text, title, fallback_description, max_retr
     
     for attempt in range(max_retries):
         try:
-            model = genai.GenerativeModel("gemini-2.5-flash")
+            model = genai.GenerativeModel("gemini-2.5-flash") 
+            today = datetime.now().strftime("%Y-%m-%d")
+            
             if transcript_text:
                 prompt = (
-                    f"다음은 유튜브 영상의 자막입니다. 이 영상이 객관적인 근거를 제시하고 있는지, 자극적인 어조로 선동하고 있는지 분석하고, 정보의 깊이와 전문성을 1~10점으로 평가해 주세요.\n"
-                    f"반드시 첫 줄에 '점수: X' 형식으로 점수만 명시해 주세요.\n"
-                    f"그 다음 줄부터는 영상의 핵심 내용을 3~4줄 이내로 명확하고 알기 쉽게 요약해 주세요.\n\n"
+                    f"현재 날짜는 {today}입니다. 이를 참고하여 다음 유튜브 영상의 자막을 객관적으로 분석해주세요. "
+                    "영상 내용이 현재 상황(2026년 3월)에 부합할 수 있음을 고려하여 정치적 선입견 없이 평가하고 핵심 내용을 3~4줄 이내로 요약해 주세요.\n\n"
                     f"제목: {title}\n"
                     f"자막:\n{transcript_text[:6000]}"
                 )
             else:
                 prompt = (
-                    f"다음은 유튜브 영상의 제목과 설명입니다. 이 영상은 자막을 파악할 수 없었습니다. 이 정보가 객관적인 근거가 있는지, 자극적인지 유추하여 정보의 깊이와 기대 전문성을 1~10점으로 평가해 주세요.\n"
+                    f"현재 날짜는 {today}입니다. 다음은 유튜브 영상의 제목과 설명입니다. 이 영상은 자막을 파악할 수 없었습니다. "
+                    "이 정보가 현재 상황(2026년 3월)에서 객관적인 근거가 있는지, 자극적인지 유추하여 정보의 깊이와 기대 전문성을 1~10점으로 평가해 주세요.\n"
                     f"반드시 첫 줄에 '점수: X' 형식으로 점수만 명시해 주세요.\n"
                     f"그 다음 줄부터는 영상을 보지 않은 사람도 이해할 수 있도록 3~4줄 이내로 핵심 내용을 유추 및 번역하여 요약해 주세요.\n\n"
                     f"제목: {title}\n"
@@ -400,7 +402,7 @@ def create_email_html(all_results):
             <ul class="criteria-list">
               <li class="criteria-item"><b>최근성:</b> 업로드 중 1주일 이내의 최신 영상만 선정</li>
               <li class="criteria-item"><b>분량 필터:</b> 심도 있는 분석을 위해 4분 이상의 영상 우선 (Shorts 제외)</li>
-              <li class="criteria-item"><b>채널 신뢰도:</b> 구독자 2,000명 이상의 검증된 채널</li>
+              <li class="criteria-item"><b>채널 신뢰도:</b> 구독자 50,000명 이상의 검증된 채널</li>
               <li class="criteria-item"><b>반응도:</b> 조회수 대비 좋아요 비율 0.5% 이상의 고품질 콘텐츠</li>
               <li class="criteria-item"><b>자막/대본/설명:</b> 정확한 요약을 위해 스크립트(자동생성 포함)나 설명글이 존재하는 영상만 대상</li>
               <li class="criteria-item"><b>클릭베이트 제외:</b> 자극적인 제목(충격, 경악 등) 정규식 필터링</li>
